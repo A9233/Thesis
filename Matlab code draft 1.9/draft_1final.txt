@@ -1,0 +1,814 @@
+% For a 6 MHz LTE system, Mpn is typically set to 120.
+Mpn=401;
+Nc=1600; 
+Cp= 1;
+Ns = 1;       %one frame(1ms) has 10 subframes and 2 slots for each subframe so the slot number can be betwwen(0,20)
+L=1;          % l is OFDM symbol number there are 7 symbols per slot it can be(0,6)
+CellID = 54;  % PCI of the cell 4G LTE supports a total of 504 unique PCIs whose values range between 0 and 503.
+
+
+x1=zeros(1,Mpn+Nc);
+x2=zeros(1,Mpn+Nc);
+% if n == 1
+  x1(1)= 1;
+% elseif any(n == (2:1:31))     % any condition makes it eaual to 1 tp 30 by an increment of 1
+  x1(2:31)= 0;    
+% end
+for n=1:1:Mpn+Nc
+     x1(n+31)= mod((x1(n+3)+x1(n)),2); 
+end
+%figure,plot(abs(x1));
+Cinit = (2^10)*(7*(Ns+1)+L+1)*(2*CellID+1)+(2*CellID)+Cp;      % Cinit = sigma(x2(i)2i)(i=0 to 30) when we equal this we x2 from the below conversion
+binStr = dec2bin(Cinit,31);                              % converts cinit into bits for x2 calculation
+bitArray = str2num(binStr(:))';                          % converts bit string into array of bits for  x2 calculation 
+x2(1:31)= bitArray;  
+for n=1:1:Mpn+Nc
+    x2(n+31)= mod((x2(n+3)+x2(n+2)+x2(n+1)+x2(n)),2);      
+end 
+%figure,plot(abs(x2));
+% until here we have calculated first m-sequence x1 and second m sequence x2
+C_pseudo=zeros(1,Mpn);
+for n=1:1:Mpn
+    C_pseudo(n)=mod((x1(n+Nc)+x2(n+Nc)),2);  
+end      
+%figure,plot(abs(C_pseudo));
+
+RB=15; %C
+%Rs=zeros(30,1);
+ Reff = zeros(1,30);
+for m=1:1:2*RB-1
+
+    Reff(m) = (1/sqrt(2))*(1-2*C_pseudo(2*m))+1i*(1/sqrt(2))*(1-2*C_pseudo(2*m+1));
+end 
+%Rs=Reff';
+% figure,plot(Rs,'+');
+%figure,plot(Rs);
+
+
+% NDLRB 6 = 1.4 Mhz
+%NDLRB 100 = 20 Mhz  %Bandwidth of the signal which can be varied
+%accordingly
+% NDLRB 3 sample purpose
+
+% m = 0,1,-- 2*NDLRB-1
+% m1 = m+ NDLRBMAX-NDLRB
+ NDLRB = 15;         %Variable bandwidth or nof resource blocks
+ NDLSymb = 7;        
+p = 0; %port number
+PCI = 54;
+if p == 0
+   L = [1,NDLSymb-2,8,NDLSymb+5];
+elseif p==1 
+   L = [1,NDLSymb-2,8,NDLSymb+5];
+elseif p==2 
+   L = 1; 
+else
+   L = 1; 
+end
+v1 = mod(PCI,6); 
+
+a=rand(180,14);  % This is variable TX_Grid generated for signal transmission PSS,SSS and CRS are mapped into this grid and are transmitted this will be varied according to bandwidth we are using  
+%a1=rand(180,14);
+
+ for m= 1:1:2*NDLRB                                %the value of m,L are used as 1 instead of 0 to avoid matlab errors so the formule were adjusted accordingly
+                                                   % to transmitt crs in all subframes n= 0 for subframe 1 and n =130 for subframe2
+  for L=[1,NDLSymb-2,8,NDLSymb+5] 
+      if L==1
+        v = 0; 
+        k1(m) = 6*m+mod(v+v1,6);
+         a(k1(m),L)=Reff(m);
+         % a(k1,L)=10;
+      elseif L==NDLSymb-2
+          v = 3; 
+        k(m) = 6*m+mod(v+v1,6);
+         a(k(m),L)=Reff(m);
+        %a(k,L)=10;
+       elseif L==8
+          v = 0; 
+        k2(m) = 6*m+mod(v+v1,6);
+         a(k2(m),L)=Reff(m);
+          %a(k2,L)=10; 
+        elseif L==NDLSymb+5
+          v = 3; 
+        k3(m) = 6*m+mod(v+v1,6);
+         a(k3(m),L)=Reff(m);
+         %a(k3,L)=10;
+      else
+          v = 0;   
+      end   
+  end
+ end
+
+%% Generating PSS with Zadoff-chu 3GPP specification and Mapping resource elements
+%function PSS_seq = PSS_Sequence_generation(CellID_N2)
+CellID_N2 = 2;   % This should be verified and studied
+root=[25 29 34];
+u=root(CellID_N2);
+dp=zeros(62,1);
+% NDLRB = 15;
+ %NDLSymb = 7;
+ NRBSC = 12;
+
+for n=1:1:62
+    if n<32
+        dp(n)= exp(-1i*((pi*u*(n-1)*(n))/63)); %n is replaced with n-1 bcoz sequence n starts from 1  
+    else        
+        dp(n)=exp(-1i*((pi*u*(n)*(n+1))/63)); 
+    end  
+end
+%n = 1,2,---62;
+% For FDD PSS is mapped to last symbol of slot 0 and 10  so L is taken as 7 and 77 similarly for TDD and also SSS
+
+for n= 1:1:62
+ for L=[7,77]
+  K4 = n-32+ NDLRB*NRBSC/2;          %taking from n-1 which makes it 32 as we are considering from 1 instead of 0
+  a(K4,L) = dp(n);
+  %a(K4,L) = 2;
+ end
+end
+% PSS FDD and TDD reserved signals below is the code for reserving those signals
+for n=[-5,-4,-3,-2,-1,63,64,65,66,67]
+ for L=[7,77]
+  K5 = n-31+ NDLRB*NRBSC/2;
+  %a(K5,L) = dp(n);
+  a(K5,L) = 3;
+ end
+end
+% For TDD PSS is mapped to 3rd symbol of slot 3 and 13 
+%PSS TDD mapping
+ 
+%  for n= 1:1:62
+%  for L=[17,87]
+%   K1 = n-31+ NDLRB*NRBSC/2;
+%   a(K1,L) = dp(n);
+%   a(K1,L) = 10;
+%  end
+% end
+% % Reserved signals TDD
+% for n=[-5,-4,-3,-2,-1,63,64,65,66,67]
+% for L=[17,87]
+%   K3 = n-31+ NDLRB*NRBSC/2;
+%   a(K3,L) = dp(n);
+%   a(K3,L) = 10;
+%  end
+% end
+
+
+%% Generating SSS
+%sequency generation
+       nid1 = 2; % values range from 0 to 167
+        nid2 = 2; % values range within 0,1,2
+        N1=nid1-1;
+        N2=nid2-1;
+
+        qq = floor((N1)/30);
+        q= floor((N1+((qq*(qq+1))/2))/30);
+        mm= N1+((q*(q+1))/2);
+        m0= mod(mm, 31);
+        m1= mod((m0+(floor(mm/31)+1)),31);
+
+        x=zeros(31,1);
+        x(1)=0;x(2)=0;x(3)=0;x(4)=0;x(5)=1;%initial condition
+        
+        x_c=zeros(31,1);
+        x_c(1)=0;x_c(2)=0;x_c(3)=0;x_c(4)=0;x_c(5)=1;%initial condition
+        
+        z_x=zeros(31,1);
+        z_x(1)=0;z_x(2)=0;z_x(3)=0;z_x(4)=0;z_x(5)=1;%initial condition
+        
+        for i=1:1:26
+            x(i+5)=mod((x(i+2)+x(i)),2);%%%%check eq
+            x_c(i+5)=mod((x_c(i+3)+x_c(i)),2);
+            z_x(i+5)=mod((z_x(i+4)+z_x(i+2)+z_x(i+1)+z_x(i)),2);
+        end
+        
+         ss=zeros(31,1);
+         cc=zeros(31,1);
+         zz=zeros(31,1);
+        for i=1:1:31
+            ss(i)=1-2*x(i);
+            cc(i)=1-2*x_c(i);
+            zz(i)=1-2*z_x(i);
+        end
+        
+         s=zeros(31,1);
+         s1=zeros(31,1);
+        
+         s56=(mod(((5-1)+m0),31));
+        for i=0:1:30
+            s(i+1)=ss((mod(i+m0,31)+1));
+            s1(i+1)=ss((mod(i+m1,31))+1);
+            
+        end
+        
+        %c seq generation
+        
+         c=zeros(31,1);
+         c1=zeros(31,1);
+        for i=0:1:30
+            
+            c(i+1)=cc(round(mod(i+(N2),31)+1));
+            c1(i+1)=cc(round(mod(i+(N2)+3,31)+1));
+            
+        end
+        
+        % z seq generation
+         z=zeros(31,1);
+         z1=zeros(31,1);
+         z0=zeros(31,1);
+        
+        for i=0:1:30
+            z0(i+1) = zz(mod(i+mod(m0,8),31)+1);
+            z1(i+1) = zz(mod(i+mod(m1,8),31)+1);
+        end
+        
+        %generating sequence
+       % d1=zeros(31,1);
+        % d2=zeros(31,1);
+        
+        
+        d1=s.*c;          % in subframes 0,1,2,3,4 (n is even)
+        d2=s1.*c1.*z0;    % in subframes 5, 6,7,8,9 (n is even)
+        d5_1=s1.*c;       % in subframes 0,1,2,3,4 (n is odd)
+        d5_2= s.*c1.*z1;  % in subframes 5,6,7,8,9 (n is odd)
+        d_seq=zeros(62,1);
+        d_seq5=zeros(62,1);
+        d_trans=zeros(62,1);
+        d_sss=zeros(62,1);
+        d_sss5=zeros(62,1);
+        d_seq(1:2:end-1) = d1;     
+        d_seq(2:2:end) = d5_1;
+        d_seq5(1:2:end-1) = d2;        
+        d_seq5(2:2:end) = d5_2;
+        
+          d_sub0=transpose(d_seq);       % d(n) for even and odd subframe 0
+          d_sub5=transpose(d_seq5);      % d(n) for even and odd subframe 5
+% Map SSS to resource grid (FDD, slots 0 and 10) that is subframe 0 and
+% subframe 5 for FDD
+% SSS are transmitted only in subframes 0 and subframe 5 of LTE
+for n = 1:62
+    for L = [6, 76]
+        K6 = n - 32 + NDLRB * NRBSC / 2;
+        if mod(n, 2) == 0 && L == 6
+        a(K6, L) = d_sub0(n);
+        elseif mod(n, 2) == 1 && L == 6
+        a(K6, L) = d_sub0(n); 
+        elseif mod(n, 2) == 0 && L == 76
+        a(K6, L) = d_sub5(n);
+        elseif mod(n, 2) == 1 && L == 76
+        a(K6, L) = d_sub5(n);
+        end
+    end
+end
+for n = [-5, -4, -3, -2, -1, 63, 64, 65, 66, 67]
+    for L = [6, 76]
+        K7 = n - 31 + NDLRB * NRBSC / 2;
+        a(K7, L) = 20;
+    end
+end
+%SSS generation test with PSS   as input
+%SSS MAPPING strats from here for both TDD and FDD
+%SSS resource mapping for FDD transmitted in slots 0 and 10 as per Lte standard but here it is 1 and 11--  6th symbol
+% for n= 1:1:62
+%  for L=[6,76]
+%   K6 = n-32+ NDLRB*NRBSC/2;       %taking from n-1 which makes it 32 as we are considering from 1 instead of 0
+%   a(K6,L) = dp(n);
+%   %a(K6,L) = 7;
+%  end
+% end
+% for n=[-5,-4,-3,-2,-1,63,64,65,66,67]
+%  for L=[6,76]
+%   K7 = n-31+ NDLRB*NRBSC/2;
+%   %a(K7,L) = dp(n);
+%   a(K7,L) = 20;
+%  end
+% end
+% SSS ,TDD resource mapping 
+%SSS resource mapping for TDD transmitted in slots 1 and 11 as per Lte standard but here it is 2 and 12--  7th symbol
+% for n= 1:1:62
+%  for L=[14,84]
+%   K2 = n-31+ NDLRB*NRBSC/2;
+%   a(K2,L) = dp(n);
+%   a(K2,L) = 2;
+%  end
+% end
+% for n=[-5,-4,-3,-2,-1,63,64,65,67]
+%  for L=[14,84]
+%   K2 = n-31+ NDLRB*NRBSC/2;
+%   a(K2,L) = dp(n);
+%   a(K2,L) = 2;
+%  end
+% end
+%figure, surf(a);
+% end
+% Parameters (based on 3 MHz LTE system, 15 RBs)
+NDLRB = 15;           % Number of resource blocks
+NRBSC = 12;           % Subcarriers per resource block
+Nsc = NDLRB * NRBSC;  % Total subcarriers (180 for 15 RBs)
+Nfft = 256;           % IFFT size (standard for 3 MHz LTE)
+Ncp_normal = 18;      % Normal CP length (average for estimation)
+Ncp_first = 20;       % CP length for first symbol in a slot (5.21 µs)
+Ncp_other = 18;       % CP length for other symbols in a slot (4.69 µs)
+Nsymb = 7;            % Symbols per slot
+Nslots = 2;           % Slots per subframe
+Nsubframes = 1;       % Process one subframe (extendable)
+Fs = 3.84e6;          % Sampling rate (3.84 MHz for 3 MHz bandwidth)
+
+% Assume resource grid 'a' from original code (180 subcarriers x 14 symbols)
+% a: 180 x 14 matrix, where rows are subcarriers, columns are OFDM symbols
+
+% Initialize time-domain signal
+Nsamples_per_symbol = Nfft + Ncp_normal;  % Average samples per symbol
+Nsamples_total = Nsubframes * Nslots * Nsymb * (Nfft + Ncp_normal); % Approx
+tx_signal = zeros(Nsamples_total, 1);     % Time-domain signal
+sample_idx = 1;                           % Running index for tx_signal
+
+% Process each subframe, slot, and symbol
+for subframe = 1:Nsubframes
+    for slot = 1:Nslots
+        for symb = 1:Nsymb
+            % Determine CP length (first symbol in slot has longer CP)
+            if symb == 1
+                Ncp = Ncp_first;  % 20 samples for first symbol
+            else
+                Ncp = Ncp_other;  % 18 samples for others
+            end
+
+            % Extract frequency-domain symbol from resource grid
+            % Column index in 'a' for current symbol
+            symbol_idx = (slot-1) * Nsymb + symb;  % 1 to 14 for one subframe
+            freq_data = zeros(Nfft, 1);            % Initialize IFFT input
+
+            % Map resource grid to IFFT bins
+            % LTE places 180 subcarriers in the center of 256 IFFT bins
+            % Subcarriers: [-90 to -1, 1 to 90] around DC (bin 0)
+            center_idx = Nfft / 2 + 1;  % DC bin (1-based indexing)
+            start_idx = center_idx - Nsc / 2;  % Start of negative frequencies
+            end_idx = center_idx + Nsc / 2 - 1; % End of positive frequencies
+
+            % Map negative frequencies (subcarriers -90 to -1)
+            freq_data(start_idx:start_idx + Nsc/2 - 1) = a(1:Nsc/2, symbol_idx);
+            % Map positive frequencies (subcarriers 1 to 90)
+            freq_data(center_idx:end_idx) = a(Nsc/2 + 1:Nsc, symbol_idx);
+
+            % Perform IFFT
+            time_data = ifft(ifftshift(freq_data), Nfft) * sqrt(Nfft); % Normalize
+
+            % Add cyclic prefix
+            cp_data = time_data(end - Ncp + 1:end);  % Last Ncp samples
+            ofdm_symbol = [cp_data; time_data];      % CP + IFFT output
+
+            % Append to transmit signal
+            symbol_length = Nfft + Ncp;
+            tx_signal(sample_idx:sample_idx + symbol_length - 1) = ofdm_symbol;
+            sample_idx = sample_idx + symbol_length;
+        end
+    end
+end
+
+% Truncate tx_signal to actual length (account for varying CP lengths)
+% Total samples = (Nfft + Ncp_first) + 6*(Nfft + Ncp_other) per slot
+ samples_per_slot = Nfft + Ncp_first + (Nsymb - 1) * (Nfft + Ncp_other);
+ samples_total = Nslots * samples_per_slot * Nsubframes;
+ tx_signal = tx_signal(1:samples_total);
+% 
+% % Plot time-domain signal (magnitude)
+% figure;
+% plot(0:1/Fs:(length(tx_signal)-1)/Fs, abs(tx_signal), 'b');
+% xlabel('Time (seconds)');
+% ylabel('Magnitude');
+% title('Time-Domain LTE Signal with Cyclic Prefix (3 MHz)');
+% grid on;
+% 
+% % Optional: Save time-domain signal to file
+% % save('tx_signal_3MHz.mat', 'tx_signal');
+% 
+% % Display signal parameters
+% fprintf('IFFT Size: %d\n', Nfft);
+% fprintf('CP Length (first symbol): %d samples\n', Ncp_first);
+% fprintf('CP Length (other symbols): %d samples\n', Ncp_other);
+% fprintf('Total Samples: %d\n', samples_total);
+% fprintf('Signal Duration: %.3f ms\n', samples_total / Fs * 1000);
+% % MATLAB extension code for LTE receiver with 8 antennas in LOS channel
+% % Receives tx_signal, models LOS channel, removes CP, performs FFT, and detects
+% % PSS, SSS, and CRS to identify cell ID and estimate channel
+% MATLAB extension code for LTE receiver with 8 antennas in LOS channel
+% Enhanced to plot PSS and SSS correlations, estimate channel using CRS,
+% and print detailed results
+% MATLAB extension code for LTE receiver with 8 antennas in LOS channel
+% Plots PSS and SSS correlations over time-domain samples, estimates channel
+% using CRS, and prints results
+
+% MATLAB code for LTE receiver with 8 antennas in LOS channel (3 MHz)
+% Detects PSS and SSS in frequency domain and plots time-domain correlation
+% over IFFT 256 samples for PSS (symbol 7) and SSS (symbol 6)
+
+% MATLAB code for LTE receiver with 8 antennas in multipath channel (3 MHz)
+% Detects PSS and SSS, plots correlation over IFFT 256 samples, estimates
+% channel using CRS, and estimates angles of arrival using MUSIC algorithm
+% Explicitly defines Npaths as the number of multipath components
+
+% Parameters (matched to 3 MHz LTE transmitter)
+NDLRB = 15;           % Number of resource blocks
+NRBSC = 12;           % Subcarriers per resource block
+Nsc = NDLRB * NRBSC;  % Total subcarriers (180)
+Nfft = 256;           % FFT size
+Ncp_first = 20;       % CP length for first symbol
+Ncp_other = 18;       % CP length for other symbols
+Nsymb = 7;            % Symbols per slot
+Nslots = 2;           % Slots per subframe
+Nsubframes = 1;       % Process one subframe
+Fs = 3.84e6;          % Sampling rate (3.84 MHz)
+Nant = 8;             % Number of receive antennas
+d_lambda = 0.5;       % Antenna spacing (half-wavelength)
+fc = 2e9;             % Carrier frequency (2 GHz)
+c = 3e8;              % Speed of light
+lambda = c / fc;      % Wavelength
+
+% Multipath channel parameters
+Npaths = 4;           % Number of multipath components (distinct AoAs)
+theta = [20, 15, 55, 75]; % Angles of arrival (degrees, Npaths values)
+%rng(42);              % Seed for reproducibility
+gains = (randn(1, Npaths) + 1j * randn(1, Npaths)) / sqrt(2); % Random complex gains (1 x Npaths)
+
+% % Validate Npaths
+% if length(theta) ~= Npaths || length(gains) ~= Npaths
+%     error('Npaths must match the number of elements in theta and gains');
+% end
+
+% Assume tx_signal from transmitter (3840 samples for 1 subframe)
+% tx_signal: Time-domain signal of length 3840 samples (2 slots)
+
+% Multipath Channel Model (steering vectors for 8-antenna ULA)
+steering_vectors = zeros(Nant, Npaths); % Nant x Npaths
+for p = 1:Npaths
+    phase_shifts = exp(-1j * 2 * pi * d_lambda * sind(theta(p)) * (0:Nant-1)).';
+    steering_vectors(:, p) = phase_shifts / sqrt(Nant); % Normalize
+end
+
+% Generate received signal for each antenna
+rx_signal = zeros(length(tx_signal), Nant);
+for p = 1:Npaths
+    signal_path = tx_signal * gains(p);
+    for ant = 1:Nant
+        rx_signal(:, ant) = rx_signal(:, ant) + signal_path * steering_vectors(ant, p);
+    end
+end
+
+% Initialize frequency-domain resource grid and time-domain symbols
+rx_grid = zeros(Nsc, Nsymb * Nslots, Nant);  % 180 x 14 x 8
+time_symbols = zeros(Nfft, Nsymb * Nslots, Nant); % 256 x 14 x 8
+
+% Process each slot and symbol
+sample_idx = 1;
+for slot = 1:Nslots
+    for symb = 1:Nsymb
+        % Determine CP length
+        Ncp = (symb == 1) * Ncp_first + (symb ~= 1) * Ncp_other;
+        
+        % Extract one OFDM symbol per antenna
+        symbol_length = Nfft + Ncp;
+        ofdm_symbol = rx_signal(sample_idx:sample_idx + symbol_length - 1, :);
+        
+        % Remove CP
+        time_data = ofdm_symbol(Ncp + 1:end, :);  % Nfft x Nant
+        
+        % Store time-domain data
+        symbol_idx = (slot-1) * Nsymb + symb;
+        time_symbols(:, symbol_idx, :) = time_data;
+        
+        % Perform FFT
+        freq_data = fftshift(fft(time_data, Nfft, 1), 1) / sqrt(Nfft); % Nfft x Nant
+        
+        % Extract central 180 subcarriers
+        center_idx = Nfft / 2 + 1;
+        start_idx = center_idx - Nsc / 2;
+        end_idx = center_idx + Nsc / 2 - 1;
+        subcarriers = freq_data(start_idx:end_idx, :); % 180 x Nant
+        
+        % Store in resource grid
+        rx_grid(:, symbol_idx, :) = subcarriers;
+        
+        % Update sample index
+        sample_idx = sample_idx + symbol_length;
+    end
+end
+
+% PSS Detection (Frequency Domain)
+pss_roots = [25, 29, 34];  % Zadoff-Chu roots for N_ID_2 = 0, 1, 2
+pss_seq = zeros(62, 3);
+for idx = 1:3
+    u = pss_roots(idx);
+    for n = 1:62
+        if n < 32
+            pss_seq(n, idx) = exp(-1j * pi * u * (n-1) * n / 63);
+        else
+            pss_seq(n, idx) = exp(-1j * pi * u * n * (n+1) / 63);
+        end
+    end
+end
+
+% Frequency-domain PSS correlation
+pss_corr_freq = zeros(Nsymb * Nslots, 3);
+for ant = 1:Nant
+    for symb = 1:Nsymb * Nslots
+        grid_symb = rx_grid(60:121, symb, ant); % Central 62 subcarriers
+        for nid2 = 1:3
+            corr = abs(sum(grid_symb .* conj(pss_seq(:, nid2))));
+            pss_corr_freq(symb, nid2) = pss_corr_freq(symb, nid2) + corr;
+        end
+    end
+end
+pss_corr_freq = sum(pss_corr_freq, 3); % Sum across antennas (MRC)
+[~, max_idx] = max(pss_corr_freq(:));
+[symb_idx, nid2_est] = ind2sub([Nsymb * Nslots, 3], max_idx);
+N_ID_2_est = nid2_est - 1; % 0, 1, or 2
+pss_symbol = symb_idx; % Should be 7 (subframe 0)
+
+% Determine subframe timing
+if pss_symbol == 7
+    subframe_start = 1; % Subframe 0
+else
+    subframe_start = 71; % Subframe 5
+end
+
+% SSS Detection (Frequency Domain)
+sss_seq = zeros(62, 168, 2); % For subframes 0 and 5
+for nid1 = 0:167
+    qq = floor(nid1 / 30);
+    q = floor((nid1 + qq * (qq + 1) / 2) / 30);
+    mm = nid1 + q * (q + 1) / 2;
+    m0 = mod(mm, 31);
+   m1= mod((m0+(floor(mm/31)+1)),31);
+    
+    x = [0; 0; 0; 0; 1; zeros(26, 1)];
+    xc = [0; 0; 0; 0; 1; zeros(26, 1)];
+    zx = [0; 0; 0; 0; 1; zeros(26, 1)];
+    for i = 1:26
+        x(i+5) = mod(x(i+2) + x(i), 2);
+        xc(i+5) = mod(xc(i+3) + xc(i), 2);
+        zx(i+5) = mod(zx(i+4) + zx(i+2) + zx(i+1) + zx(i), 2);
+    end
+    ss = 1 - 2 * x;
+    cc = 1 - 2 * xc;
+    zz = 1 - 2 * zx;
+    
+    s0 = circshift(ss, m0);
+    s1 = circshift(ss, m1);
+    c0 = circshift(cc, N_ID_2_est);
+    c1 = circshift(cc, N_ID_2_est + 3);
+    z0 = circshift(zz, mod(m0, 8));
+    z1 = circshift(zz, mod(m1, 8));
+    
+    d_sub0 = zeros(62, 1);
+    d_sub5 = zeros(62, 1);
+    for n = 0:30
+        d_sub0(2*n + 1) = s0(n+1) * c0(n+1);
+        d_sub0(2*n + 2) = s1(n+1) * c1(n+1) * z0(n+1);
+        d_sub5(2*n + 1) = s1(n+1) * c0(n+1);
+        d_sub5(2*n + 2) = s0(n+1) * c1(n+1) * z1(n+1);
+    end
+    sss_seq(:, nid1 + 1, 1) = d_sub0;
+    sss_seq(:, nid1 + 1, 2) = d_sub5;
+end
+
+% Frequency-domain SSS correlation
+sss_symbol = pss_symbol - 1; % SSS in symbol 6 (subframe 0)
+sss_corr_freq = zeros(168, 2);
+for ant = 1:Nant
+    grid_symb = rx_grid(60:121, sss_symbol, ant);
+    for nid1 = 0:167
+        for sf = 1:2 % Subframe 0 or 5
+            corr = abs(sum(grid_symb .* conj(sss_seq(:, nid1 + 1, sf))));
+            sss_corr_freq(nid1 + 1, sf) = sss_corr_freq(nid1 + 1, sf) + corr;
+        end
+    end
+end
+sss_corr_freq = sum(sss_corr_freq, 3); % Sum across antennas
+[~, max_idx] = max(sss_corr_freq(:));
+[nid1_est, sf_idx] = ind2sub([168, 2], max_idx);
+N_ID_1_est = nid1_est - 1; % 0 to 167
+subframe_est = (sf_idx == 1) * 0 + (sf_idx == 2) * 5;
+
+% Calculate PCI
+PCI_est = 3 * N_ID_1_est + N_ID_2_est;
+
+% Time-Domain PSS Correlation Over IFFT 256 Samples (Symbol 7)
+pss_time_seq = zeros(Nfft, 3);
+for idx = 1:3
+    freq_data = zeros(Nfft, 1);
+    center_idx = Nfft / 2 + 1;
+    start_idx = center_idx - 31; % Central 62 subcarriers
+    end_idx = center_idx + 30;
+    freq_data(start_idx:end_idx) = pss_seq(:, idx); % Map 62 subcarriers
+    pss_time_seq(:, idx) = ifft(ifftshift(freq_data), Nfft) * sqrt(Nfft);
+end
+
+% Correlate for PSS symbol
+pss_corr_time = zeros(Nfft, 3); % 256 x 3
+for ant = 1:Nant
+    time_data = time_symbols(:, pss_symbol, ant); % 256 samples from symbol 7
+    for nid2 = 1:3
+        corr = abs(xcorr(time_data, pss_time_seq(:, nid2), 'normalized'));
+        corr_center = corr(Nfft:end); % Length 256 (lags 0 to 255)
+        pss_corr_time(:, nid2) = pss_corr_time(:, nid2) + corr_center(1:Nfft);
+    end
+end
+pss_corr_time = pss_corr_time / Nant; % Average across antennas
+
+% Time-Domain SSS Correlation Over IFFT 256 Samples (Symbol 6)
+sss_time_seq = zeros(Nfft, 2); % Subframes 0 and 5
+for sf = 1:2
+    freq_data = zeros(Nfft, 1);
+    freq_data(start_idx:end_idx) = sss_seq(:, N_ID_1_est + 1, sf);
+    sss_time_seq(:, sf) = ifft(ifftshift(freq_data), Nfft) * sqrt(Nfft);
+end
+
+% Correlate for SSS symbol
+sss_corr_time = zeros(Nfft, 2); % 256 x 2
+for ant = 1:Nant
+    time_data = time_symbols(:, sss_symbol, ant); % 256 samples from symbol 6
+    for sf = 1:2
+        corr = abs(xcorr(time_data, sss_time_seq(:, sf), 'normalized'));
+        corr_center = corr(Nfft:end); % Length 256
+        sss_corr_time(:, sf) = sss_corr_time(:, sf) + corr_center(1:Nfft);
+    end
+end
+sss_corr_time = sss_corr_time / Nant; % Average across antennas
+
+% CRS Detection and Channel Estimation
+crs_symbols = [1, 4, 8, 11]; % Symbols 0, 3, 7, 10 (1-based)
+v1 = mod(PCI_est, 6);
+crs_positions = zeros(Nsc, length(crs_symbols));
+crs_ref = zeros(Nsc, length(crs_symbols));
+
+% Regenerate CRS
+Mpn = 401;
+Nc = 1600;
+x1 = zeros(1, Mpn + Nc);
+x2 = zeros(1, Mpn + Nc);
+x1(1) = 1;
+x1(2:31) = 0;
+for n = 1:Mpn + Nc
+    x1(n+31) = mod(x1(n+3) + x1(n), 2);
+end
+Cinit = 2^10 * (7 * (Nslots + 1) + crs_symbols(1) + 1) * (2 * PCI_est + 1) + 2 * PCI_est + 1;
+binStr = dec2bin(Cinit, 31);
+bitArray = str2num(binStr(:))';
+x2(1:31) = bitArray;
+for n = 1:Mpn + Nc
+    x2(n+31) = mod(x2(n+3) + x2(n+2) + x2(n+1) + x2(n), 2);
+end
+C_pseudo = mod(x1(Nc + 1:Nc + Mpn) + x2(Nc + 1:Nc + Mpn), 2);
+Reff = zeros(1, 2 * NDLRB);
+for m = 1:2 * NDLRB
+    Reff(m) = (1/sqrt(2)) * (1 - 2 * C_pseudo(2 * m)) + 1j * (1/sqrt(2)) * (1 - 2 * C_pseudo(2 * m + 1));
+end
+
+% Map CRS
+for m = 1:2 * NDLRB
+    for idx = 1:length(crs_symbols)
+        L = crs_symbols(idx);
+        if L == 1 || L == 8
+            v = 0;
+        else
+            v = 3;
+        end
+        k = 6 * m + mod(v + v1, 6);
+        if k <= Nsc && k > 0
+            crs_positions(k, idx) = 1;
+            crs_ref(k, idx) = Reff(m);
+        end
+    end
+end
+
+% Channel estimation
+H_est = zeros(Nsc, length(crs_symbols), Nant);
+for ant = 1:Nant
+    for idx = 1:length(crs_symbols)
+        L = crs_symbols(idx);
+        for k = 1:Nsc
+            if crs_positions(k, idx) == 1
+                H_est(k, idx, ant) = rx_grid(k, L, ant) / crs_ref(k, idx);
+            end
+        end
+    end
+end
+
+% Interpolate channel estimates
+H_est_interp = zeros(Nsc, length(crs_symbols), Nant);
+for ant = 1:Nant
+    for idx = 1:length(crs_symbols)
+        crs_idx = find(crs_positions(:, idx));
+        crs_h = H_est(crs_idx, idx, ant);
+        all_idx = 1:Nsc;
+        H_est_interp(:, idx, ant) = interp1(crs_idx, crs_h, all_idx, 'linear', 'extrap');
+    end
+end
+H_est_final = mean(H_est_interp, 2); % 180 x 1 x 8
+
+% MUSIC Algorithm for AoA Estimation
+% Compute spatial covariance matrix
+H_avg = mean(H_est_final, 1); % Average over subcarriers: 1 x 1 x 8
+H_avg = squeeze(H_avg).'; % 8 x 1
+R = H_avg * H_avg'; % Initial covariance matrix
+for k = 1:Nsc
+    h_k = squeeze(H_est_final(k, 1, :)); % Nant x 1
+    R = R + (h_k * h_k'); % Accumulate covariance
+end
+R = R / Nsc; % Average covariance
+
+% Eigenvalue decomposition
+[eig_vec, eig_val] = eig(R);
+eig_val = diag(eig_val);
+[~, idx] = sort(eig_val, 'descend');
+eig_vec = eig_vec(:, idx); % Sort eigenvectors
+En = eig_vec(:, Npaths:end); % Noise subspace (8 x (8-Npaths))
+
+% MUSIC spectrum
+angles = -90:1:90; % Angle range for scanning
+P_music = zeros(size(angles));
+for i = 1:length(angles)
+    a = exp(-1j * 2 * pi * d_lambda * sind(angles(i)) * (0:Nant-1)).' / sqrt(Nant);
+    P_music(i) = 1 / abs(a' * (En * En') * a);
+end
+P_music = 10 * log10(P_music / max(P_music)); % Normalize and convert to dB
+
+% Find AoA estimates
+[~, peak_idx] = findpeaks(P_music, 'SortStr', 'descend', 'NPeaks', Npaths);
+theta_est = angles(peak_idx);
+theta_est = sort(theta_est); % Sort for consistency
+
+% Plot PSS Correlation Over IFFT 256 Samples (Symbol 7)
+figure;
+plot(0:Nfft-1, pss_corr_time, 'LineWidth', 1.5);
+xlabel('IFFT Sample Index');
+ylabel('Normalized Correlation Magnitude');
+title('PSS Correlation Over IFFT 256 Samples (Symbol 7)');
+legend('N_ID_2 = 0', 'N_ID_2 = 1', 'N_ID_2 = 2');
+grid on;
+
+% Plot SSS Correlation Over IFFT 256 Samples (Symbol 6)
+figure;
+plot(0:Nfft-1, sss_corr_time(:, 1), 'b', 'DisplayName', sprintf('Subframe 0, N_ID_1 = %d', N_ID_1_est));
+hold on;
+plot(0:Nfft-1, sss_corr_time(:, 2), 'r', 'DisplayName', sprintf('Subframe 5, N_ID_1 = %d', N_ID_1_est));
+xlabel('IFFT Sample Index');
+ylabel('Normalized Correlation Magnitude');
+title('SSS Correlation Over IFFT 256 Samples (Symbol 6)');
+legend;
+grid on;
+
+% Plot MUSIC Spectrum
+figure;
+plot(angles, P_music, 'LineWidth', 1.5);
+xlabel('Angle (degrees)');
+ylabel('MUSIC Spectrum (dB)');
+title('MUSIC Spectrum for AoA Estimation');
+grid on;
+hold on;
+plot(theta_est, P_music(peak_idx), 'ro', 'MarkerFaceColor', 'r', 'DisplayName', 'Estimated AoAs');
+legend;
+
+% Plot Channel Estimates
+figure;
+subplot(2, 1, 1);
+for ant = 1:Nant
+    plot(1:Nsc, abs(H_est_final(:, 1, ant)), 'DisplayName', sprintf('Antenna %d', ant));
+    hold on;
+end
+xlabel('Subcarrier Index');
+ylabel('Magnitude');
+title('Estimated Channel Magnitude (Multipath)');
+legend;
+grid on;
+
+% subplot(2, 1, 2);
+% for ant = 1:Nant
+%     plot(1:Nsc, angle(H_est_final(:, 1, ant)) * 180 / pi, 'DisplayName', sprintf('Antenna %d', ant));
+%     hold on;
+% end
+xlabel('Subcarrier Index');
+ylabel('Phase (degrees)');
+title('Estimated Channel Phase (Multipath)');
+legend;
+grid on;
+
+% Print Results
+fprintf('=== LTE Receiver Results ===\n');
+fprintf('Detected N_ID_2: %d\n', N_ID_2_est);
+fprintf('Detected N_ID_1: %d\n', N_ID_1_est);
+fprintf('Detected PCI: %d\n', PCI_est);
+fprintf('Detected Subframe: %d\n', subframe_est);
+fprintf('Number of Multipath Components (Npaths): %d\n', Npaths);
+fprintf('Estimated Angles of Arrival (degrees): %s\n', num2str(theta_est));
+fprintf('\nEstimated Channel Coefficients (Magnitude and Phase in degrees):\n');
+% for ant = 1:Nant
+%     mag_mean = mean(abs(H_est_final(:, 1, ant)));
+%     phase_mean = mean(angle(H_est_final(:, 1, ant))) * 180 / pi;
+%     fprintf('Antenna %d: Magnitude = %.4f, Phase = %.2f degrees\n', ...
+%         ant, mag_mean, phase_mean);
+% end
+
+% End of script
+% End of script
